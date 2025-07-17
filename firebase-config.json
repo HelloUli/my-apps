@@ -1,0 +1,11 @@
+{
+  "projectId": "crm-app-ea777",
+  "projectNumber": "174934345835",
+  "apiKey": "AIzaSyC6749kNDGisgKY1qIdUcMsrjSBuqF4Fao",
+  "authDomain": "crm-app-ea777.firebaseapp.com",
+  "storageBucket": "crm-app-ea777.appspot.com",
+  "messagingSenderId": "174934345835",
+  "appId": "NEED_TO_GET_FROM_CONSOLE",
+  "databaseURL": "https://crm-app-ea777-default-rtdb.firebaseio.com",
+  "firestoreLocation": "us-central1"
+} 
