@@ -1,6 +1,4 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
-# dependencies
+# Dependencies
 node_modules/
 
 # Expo
@@ -9,29 +7,36 @@ dist/
 web-build/
 expo-env.d.ts
 
-# Native
-.kotlin/
-*.orig.*
-*.jks
+# Build artifacts
+*.aab
+*.apk
+*.ipa
+
+# Credentials and secrets (keep locally, don't push)
+hello-habanero-app-daf6106be09a.json
+*.json.key
 *.p8
 *.p12
-*.key
+*.jks
 *.mobileprovision
 
-# Metro
-.metro-health-check*
-
-# debug
+# Debug
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+.metro-health-check*
 
-# macOS
+# OS
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
+# Environment
+.env*
+firebase-config.json
 
-# typescript
+# TypeScript
 *.tsbuildinfo
+
+# Test files (optional - remove if you want to keep them)
+test-*.js
+debug-*.js
