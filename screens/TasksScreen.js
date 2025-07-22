@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { taskService } from '../services/taskService';
 import { taskResponseService } from '../services/taskResponseService';
+import { taskReviewService } from '../services/taskReviewService';
 import { projectService } from '../services/projectService';
 import { auth } from '../firebase';
 
@@ -28,6 +29,8 @@ const TasksScreen = ({ navigation, route }) => {
   const [submittingTask, setSubmittingTask] = useState(null);
   const [submittingMedia, setSubmittingMedia] = useState([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [expandedMedia, setExpandedMedia] = useState(null);
+  const [showMediaModal, setShowMediaModal] = useState(false);
 
   // Get filter from navigation params
   const filter = route?.params?.filter || 'pending';
@@ -192,6 +195,30 @@ const TasksScreen = ({ navigation, route }) => {
     setSubmittingMedia(prev => prev.filter((_, i) => i !== index));
   };
 
+  // New function to approve review tasks
+  const approveReviewTask = async (taskId) => {
+    try {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        await taskReviewService.approveReviewTask(taskId, currentUser.uid);
+        
+        // Reload tasks to update the list
+        await loadTasks();
+        
+        Alert.alert('Success', 'Review task approved successfully!');
+      }
+    } catch (error) {
+      console.error('Error approving review task:', error);
+      Alert.alert('Error', 'Failed to approve review task');
+    }
+  };
+
+  // New function to expand media
+  const expandMedia = (media) => {
+    setExpandedMedia(media);
+    setShowMediaModal(true);
+  };
+
   const submitTaskResponse = async (taskId) => {
     const notes = notesByTaskId[taskId] || '';
     if (!notes.trim() && submittingMedia.length === 0) {
@@ -256,6 +283,7 @@ const TasksScreen = ({ navigation, route }) => {
     switch (taskType) {
       case 'Need Media': return 'cloud-upload';
       case 'Need Feedback': return 'chatbubble-ellipses';
+      case 'Review Task': return 'eye';
       case 'Notes': return 'document-text';
       default: return 'checkmark-circle';
     }
@@ -448,6 +476,46 @@ const TasksScreen = ({ navigation, route }) => {
                         ))}
                       </View>
                     )}
+
+                    {/* Review Task Specific UI */}
+                    {task.type === 'Review Task' && task.reviewMedia && task.reviewMedia.length > 0 && (
+                      <View style={styles.reviewSection}>
+                        <Text style={styles.reviewTitle}>Media to Review:</Text>
+                        <View style={styles.reviewMediaGrid}>
+                          {task.reviewMedia.map((media, index) => (
+                            <TouchableOpacity
+                              key={index}
+                              style={styles.reviewMediaItem}
+                              onPress={() => expandMedia(media)}
+                            >
+                              <Image
+                                source={{ uri: media.url }}
+                                style={styles.reviewMediaImage}
+                                resizeMode="cover"
+                              />
+                              <View style={styles.reviewMediaOverlay}>
+                                <Ionicons name="expand" size={20} color={COLORS.white} />
+                              </View>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                        {task.status === 'pending' && (
+                          <TouchableOpacity
+                            style={styles.approveButton}
+                            onPress={() => approveReviewTask(task.id)}
+                          >
+                            <Ionicons name="checkmark-circle" size={20} color={COLORS.white} />
+                            <Text style={styles.approveButtonText}>Approve</Text>
+                          </TouchableOpacity>
+                        )}
+                        {task.status === 'approved' && (
+                          <View style={styles.approvedBadge}>
+                            <Ionicons name="checkmark-circle" size={16} color={COLORS.success} />
+                            <Text style={styles.approvedText}>Approved</Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
                   </View>
                 );
               })
@@ -455,6 +523,33 @@ const TasksScreen = ({ navigation, route }) => {
           </ScrollView>
         </View>
 
+        {/* Media Expansion Modal */}
+        <Modal
+          visible={showMediaModal}
+          transparent={true}
+          animationType="fade"
+        >
+          <View style={styles.mediaModalOverlay}>
+            <View style={styles.mediaModalContent}>
+              <TouchableOpacity
+                style={styles.closeMediaButton}
+                onPress={() => {
+                  setShowMediaModal(false);
+                  setExpandedMedia(null);
+                }}
+              >
+                <Ionicons name="close" size={24} color={COLORS.white} />
+              </TouchableOpacity>
+              {expandedMedia && (
+                <Image
+                  source={{ uri: expandedMedia.url }}
+                  style={styles.expandedMediaImage}
+                  resizeMode="contain"
+                />
+              )}
+            </View>
+          </View>
+        </Modal>
 
       </LinearGradient>
     </View>
@@ -830,6 +925,100 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: COLORS.darkGray,
     fontStyle: 'italic',
+  },
+  // Review task styles
+  reviewSection: {
+    backgroundColor: COLORS.white,
+    borderRadius: 8,
+    padding: 16,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  reviewTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.black,
+    marginBottom: 12,
+  },
+  reviewMediaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  reviewMediaItem: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  reviewMediaImage: {
+    width: '100%',
+    height: '100%',
+  },
+  reviewMediaOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  approveButton: {
+    backgroundColor: COLORS.success,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  approveButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  approvedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.gray,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  approvedText: {
+    color: COLORS.success,
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginLeft: 4,
+  },
+  // Media expansion modal styles
+  mediaModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mediaModalContent: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeMediaButton: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 1,
+    padding: 10,
+  },
+  expandedMediaImage: {
+    width: '100%',
+    height: '100%',
   },
 });
 

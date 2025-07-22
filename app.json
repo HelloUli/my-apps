@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "hellohabanero-crm",
+    "name": "Hello Habanero CRM",
     "slug": "hellohabanero-crm",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -13,17 +13,30 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hellouli.hellohabanerocrm",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.hellouli.hellohabanerocrm",
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "db419ca6-dd38-4bbb-9140-14bd9e288a10"
+      }
+    },
+    "owner": "ulises2424"
   }
 }

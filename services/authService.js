@@ -6,8 +6,9 @@ import {
   signOut,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage } from '../firebase';
+import * as FileSystem from 'expo-file-system';
 
 export const authService = {
   // Sign up new user
@@ -162,11 +163,15 @@ export const authService = {
   // Upload profile picture
   async uploadProfilePicture(uid, imageUri) {
     try {
-      const response = await fetch(imageUri);
-      const blob = await response.blob();
+      // Read file as base64
+      const base64Data = await FileSystem.readAsStringAsync(imageUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
       
       const storageRef = ref(storage, `profile-pictures/${uid}`);
-      await uploadBytes(storageRef, blob);
+      
+      // Upload base64 string to Firebase
+      await uploadString(storageRef, base64Data, 'base64');
       
       const downloadURL = await getDownloadURL(storageRef);
       

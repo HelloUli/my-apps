@@ -10,7 +10,7 @@ import {
   where, 
   orderBy 
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import * as FileSystem from 'expo-file-system';
 
@@ -36,7 +36,18 @@ export const taskResponseService = {
             console.log('Uploaded media file:', mediaFile.fileName, 'URL:', mediaUrl);
           } catch (uploadError) {
             console.error('Error uploading media file:', mediaFile.fileName, uploadError);
-            throw new Error('Failed to upload media file: ' + mediaFile.fileName + ' - ' + uploadError.message);
+            // Provide more specific error messages
+            let errorMessage = 'Failed to upload media file: ' + mediaFile.fileName;
+            if (uploadError.message.includes('storage/unauthorized')) {
+              errorMessage += ' - Unauthorized access to storage';
+            } else if (uploadError.message.includes('storage/quota-exceeded')) {
+              errorMessage += ' - Storage quota exceeded';
+            } else if (uploadError.message.includes('storage/unknown')) {
+              errorMessage += ' - Network or server error. Please try again.';
+            } else {
+              errorMessage += ' - ' + uploadError.message;
+            }
+            throw new Error(errorMessage);
           }
         }
       }
@@ -69,16 +80,22 @@ export const taskResponseService = {
   async uploadMediaFile(taskId, userId, mediaFile) {
     try {
       const fileName = `${taskId}_${userId}_${Date.now()}_${mediaFile.fileName}`;
-      const storageRef = ref(storage, `task-responses/${fileName}`);
-      // Use fetch for all URIs (file:// and data:)
-      const response = await fetch(mediaFile.uri);
-      const fileData = await response.blob();
-      await uploadBytes(storageRef, fileData);
+      const storageRef = ref(storage, `task-reviews/${fileName}`);
+      
+      // Read file as base64
+      const base64Data = await FileSystem.readAsStringAsync(mediaFile.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      
+      // Upload base64 string to Firebase
+      await uploadString(storageRef, base64Data, 'base64');
+      
+      // Get download URL
       const downloadURL = await getDownloadURL(storageRef);
       return downloadURL;
     } catch (error) {
       console.error('Error uploading media file:', error);
-      throw new Error('Failed to upload media file');
+      throw new Error('Failed to upload media file: ' + error.message);
     }
   },
 

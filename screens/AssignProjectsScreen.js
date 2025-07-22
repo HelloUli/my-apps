@@ -33,7 +33,8 @@ const AssignProjectsScreen = ({ navigation }) => {
     clientName: '',
     budget: '',
     dueDate: '',
-    projectType: 'website'
+    projectType: 'website',
+    websiteLink: ''
   });
 
   const [tasks, setTasks] = useState([]);
@@ -184,6 +185,7 @@ const AssignProjectsScreen = ({ navigation }) => {
         budget: parseFloat(projectData.budget) || 0,
         dueDate: projectData.dueDate ? new Date(projectData.dueDate) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         projectType: projectData.projectType,
+        website_link: projectData.websiteLink || null,
         status: 'in-progress',
         priority: 'medium',
         progress: 0,
@@ -219,7 +221,8 @@ const AssignProjectsScreen = ({ navigation }) => {
         clientName: '',
         budget: '',
         dueDate: '',
-        projectType: 'website'
+        projectType: 'website',
+        websiteLink: ''
       });
       setTasks([]);
       setSelectedUser(null);
@@ -883,6 +886,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginRight: 8,
     alignItems: 'center',
+    marginBottom: 0, // Remove bottom padding
   },
   modalCancelText: {
     color: COLORS.black,

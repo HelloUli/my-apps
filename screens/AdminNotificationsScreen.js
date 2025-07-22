@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { taskService } from '../services/taskService';
 import { taskResponseService } from '../services/taskResponseService';
+import { projectService } from '../services/projectService';
 import { auth } from '../firebase';
 
 const AdminNotificationsScreen = ({ navigation }) => {
@@ -23,21 +24,22 @@ const AdminNotificationsScreen = ({ navigation }) => {
   const [completingTask, setCompletingTask] = useState(null);
   const [completionModal, setCompletionModal] = useState(false);
   const [adminNotes, setAdminNotes] = useState('');
-  const [createTaskModal, setCreateTaskModal] = useState(false);
-  const [newTask, setNewTask] = useState({
-    title: '',
-    description: '',
-    instructions: '',
-    type: 'Need Media',
-    priority: 'medium',
-    assigned_user_id: '',
-  });
   const [projectFilter, setProjectFilter] = useState('');
   const [allProjects, setAllProjects] = useState([]);
 
   useEffect(() => {
-    loadTasks();
-    loadProjects();
+    const initializeData = async () => {
+      try {
+        await Promise.all([
+          loadTasks(),
+          loadProjects()
+        ]);
+      } catch (error) {
+        console.error('Error initializing data:', error);
+      }
+    };
+    
+    initializeData();
   }, []);
 
   const loadTasks = async () => {
@@ -82,12 +84,15 @@ const AdminNotificationsScreen = ({ navigation }) => {
 
   const loadProjects = async () => {
     try {
-      const projects = await require('../services/projectService').projectService.getAllProjects();
+      const projects = await projectService.getAllProjects();
       setAllProjects(projects);
     } catch (error) {
+      console.error('Error loading projects:', error);
       setAllProjects([]);
     }
   };
+
+
 
   const filteredTasks = projectFilter
     ? tasks.filter(task => {
@@ -128,35 +133,7 @@ const AdminNotificationsScreen = ({ navigation }) => {
     }
   };
 
-  const createNewTask = async () => {
-    if (!newTask.title || !newTask.description || !newTask.assigned_user_id) {
-      Alert.alert('Error', 'Please fill in all required fields');
-      return;
-    }
 
-    try {
-      await taskService.createTask({
-        ...newTask,
-        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-        assignedBy: auth.currentUser?.uid || 'admin',
-      });
-      
-      setCreateTaskModal(false);
-      setNewTask({
-        title: '',
-        description: '',
-        instructions: '',
-        type: 'Need Media',
-        priority: 'medium',
-        assigned_user_id: '',
-      });
-      
-      Alert.alert('Success', 'Task created successfully!');
-    } catch (error) {
-      console.error('Error creating task:', error);
-      Alert.alert('Error', 'Failed to create task');
-    }
-  };
 
   const getPriorityColor = (priority) => {
     switch (priority) {
@@ -170,7 +147,8 @@ const AdminNotificationsScreen = ({ navigation }) => {
   const getTaskTypeIcon = (taskType) => {
     switch (taskType) {
       case 'Need Media': return 'cloud-upload';
-      case 'Notes': return 'document-text';
+      case 'Need Feedback': return 'document-text';
+      case 'Review Task': return 'eye';
       default: return 'checkmark-circle';
     }
   };
@@ -184,6 +162,7 @@ const AdminNotificationsScreen = ({ navigation }) => {
     switch (status) {
       case 'resolved': return COLORS.primary;
       case 'completed': return COLORS.secondary;
+      case 'approved': return COLORS.success;
       default: return COLORS.darkGray;
     }
   };
@@ -354,13 +333,7 @@ const AdminNotificationsScreen = ({ navigation }) => {
           </ScrollView>
         </View>
 
-        {/* Floating Action Button */}
-        <TouchableOpacity
-          style={styles.fab}
-          onPress={() => setCreateTaskModal(true)}
-        >
-          <Ionicons name="add" size={24} color={COLORS.white} />
-        </TouchableOpacity>
+
 
         {/* Completion Modal */}
         <Modal
@@ -405,152 +378,7 @@ const AdminNotificationsScreen = ({ navigation }) => {
           </View>
         </Modal>
 
-        {/* Create Task Modal */}
-        <Modal
-          visible={createTaskModal}
-          transparent={true}
-          animationType="slide"
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Create New Task</Text>
-              
-              <Text style={styles.modalLabel}>Task Title *:</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Enter task title..."
-                value={newTask.title}
-                onChangeText={(text) => setNewTask({...newTask, title: text})}
-              />
-              
-              <Text style={styles.modalLabel}>Description *:</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Enter task description..."
-                value={newTask.description}
-                onChangeText={(text) => setNewTask({...newTask, description: text})}
-                multiline
-                numberOfLines={3}
-                textAlignVertical="top"
-              />
-              
-              <Text style={styles.modalLabel}>Instructions:</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Enter detailed instructions..."
-                value={newTask.instructions}
-                onChangeText={(text) => setNewTask({...newTask, instructions: text})}
-                multiline
-                numberOfLines={3}
-                textAlignVertical="top"
-              />
-              
-              <Text style={styles.modalLabel}>User ID *:</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Enter user ID to assign task..."
-                value={newTask.assigned_user_id}
-                onChangeText={(text) => setNewTask({...newTask, assigned_user_id: text})}
-              />
-              
-              <Text style={styles.modalLabel}>Task Type:</Text>
-              <View style={styles.buttonGroup}>
-                <TouchableOpacity
-                  style={[
-                    styles.optionButton,
-                    newTask.type === 'Need Media' && styles.optionButtonActive
-                  ]}
-                  onPress={() => setNewTask({...newTask, type: 'Need Media'})}
-                >
-                  <Text style={[
-                    styles.optionButtonText,
-                    newTask.type === 'Need Media' && styles.optionButtonTextActive
-                  ]}>Need Media</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.optionButton,
-                    newTask.type === 'Notes' && styles.optionButtonActive
-                  ]}
-                  onPress={() => setNewTask({...newTask, type: 'Notes'})}
-                >
-                  <Text style={[
-                    styles.optionButtonText,
-                    newTask.type === 'Notes' && styles.optionButtonTextActive
-                  ]}>Notes</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.optionButton,
-                    newTask.type === 'Other' && styles.optionButtonActive
-                  ]}
-                  onPress={() => setNewTask({...newTask, type: 'Other'})}
-                >
-                  <Text style={[
-                    styles.optionButtonText,
-                    newTask.type === 'Other' && styles.optionButtonTextActive
-                  ]}>Other</Text>
-                </TouchableOpacity>
-              </View>
-              
-              <Text style={styles.modalLabel}>Priority:</Text>
-              <View style={styles.buttonGroup}>
-                <TouchableOpacity
-                  style={[
-                    styles.optionButton,
-                    newTask.priority === 'low' && styles.optionButtonActive
-                  ]}
-                  onPress={() => setNewTask({...newTask, priority: 'low'})}
-                >
-                  <Text style={[
-                    styles.optionButtonText,
-                    newTask.priority === 'low' && styles.optionButtonTextActive
-                  ]}>Low</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.optionButton,
-                    newTask.priority === 'medium' && styles.optionButtonActive
-                  ]}
-                  onPress={() => setNewTask({...newTask, priority: 'medium'})}
-                >
-                  <Text style={[
-                    styles.optionButtonText,
-                    newTask.priority === 'medium' && styles.optionButtonTextActive
-                  ]}>Medium</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.optionButton,
-                    newTask.priority === 'high' && styles.optionButtonActive
-                  ]}
-                  onPress={() => setNewTask({...newTask, priority: 'high'})}
-                >
-                  <Text style={[
-                    styles.optionButtonText,
-                    newTask.priority === 'high' && styles.optionButtonTextActive
-                  ]}>High</Text>
-                </TouchableOpacity>
-              </View>
-              
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={styles.modalCancelButton}
-                  onPress={() => setCreateTaskModal(false)}
-                >
-                  <Text style={styles.modalCancelText}>Cancel</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity
-                  style={styles.modalConfirmButton}
-                  onPress={createNewTask}
-                >
-                  <Text style={styles.modalConfirmText}>Create Task</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
+
       </LinearGradient>
     </View>
   );
@@ -735,17 +563,25 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(255, 0, 0, 0.3)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalContent: {
     backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 20,
     margin: 20,
     width: '90%',
     maxWidth: 400,
+    maxHeight: '90%',
+    overflow: 'hidden',
+    borderWidth: 3,
+    borderColor: COLORS.primary,
+  },
+  modalScrollView: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 10,
   },
   modalTitle: {
     fontSize: 20,
@@ -825,12 +661,12 @@ const styles = StyleSheet.create({
   buttonGroup: {
     flexDirection: 'row',
     marginBottom: 16,
-    gap: 8,
+    gap: 4,
   },
   optionButton: {
     flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
     borderWidth: 1,
     borderColor: COLORS.darkGray,
     borderRadius: 8,
@@ -841,10 +677,57 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
   },
   optionButtonText: {
-    fontSize: 14,
+    fontSize: 12,
     color: COLORS.darkGray,
+    textAlign: 'center',
   },
   optionButtonTextActive: {
+    color: COLORS.white,
+    fontWeight: 'bold',
+  },
+  dropdownButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.darkGray,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    backgroundColor: COLORS.white,
+    minHeight: 44,
+  },
+  dropdownButtonText: {
+    fontSize: 16,
+    color: COLORS.black,
+    flex: 1,
+  },
+  dropdownPlaceholder: {
+    color: COLORS.darkGray,
+    fontStyle: 'italic',
+  },
+  dropdownList: {
+    maxHeight: 150,
+    borderWidth: 1,
+    borderColor: COLORS.gray,
+    borderRadius: 8,
+    backgroundColor: COLORS.white,
+    marginBottom: 16,
+  },
+  dropdownItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.lightGray,
+  },
+  dropdownItemSelected: {
+    backgroundColor: COLORS.primary,
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: COLORS.black,
+  },
+  dropdownItemTextSelected: {
     color: COLORS.white,
     fontWeight: 'bold',
   },
@@ -874,6 +757,260 @@ const styles = StyleSheet.create({
     padding: 6,
     borderRadius: 4,
     marginBottom: 4,
+  },
+  // New styles for media upload section
+  mediaUploadSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.gray,
+  },
+  pickMediaButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.lightGray,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.darkGray,
+  },
+  pickMediaButtonText: {
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  uploadedMediaList: {
+    marginTop: 12,
+  },
+  uploadedMediaTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.black,
+    marginBottom: 8,
+  },
+  uploadedMediaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    borderRadius: 6,
+    padding: 8,
+    marginBottom: 6,
+  },
+  uploadedMediaImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 4,
+    marginRight: 10,
+  },
+  removeMediaButton: {
+    padding: 5,
+  },
+  // NEW MODAL STYLES
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.gray,
+  },
+  closeButton: {
+    padding: 5,
+  },
+  inputGroup: {
+    marginBottom: 20,
+  },
+  inputLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.black,
+    marginBottom: 8,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: COLORS.darkGray,
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 16,
+    backgroundColor: COLORS.white,
+  },
+  textArea: {
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  userDropdown: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.darkGray,
+    borderRadius: 10,
+    padding: 12,
+    backgroundColor: COLORS.white,
+    minHeight: 48,
+  },
+  dropdownText: {
+    fontSize: 16,
+    color: COLORS.black,
+    flex: 1,
+  },
+  placeholderText: {
+    color: COLORS.darkGray,
+    fontStyle: 'italic',
+  },
+  dropdownContainer: {
+    maxHeight: 150,
+    borderWidth: 1,
+    borderColor: COLORS.gray,
+    borderRadius: 10,
+    backgroundColor: COLORS.white,
+    marginTop: 5,
+  },
+  userList: {
+    maxHeight: 150,
+  },
+  userItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.lightGray,
+  },
+  selectedUserItem: {
+    backgroundColor: COLORS.primary,
+  },
+  userItemText: {
+    fontSize: 14,
+    color: COLORS.black,
+  },
+  selectedUserItemText: {
+    color: COLORS.white,
+    fontWeight: 'bold',
+  },
+  taskTypeContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  taskTypeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: COLORS.darkGray,
+    borderRadius: 10,
+    backgroundColor: COLORS.white,
+    gap: 6,
+  },
+  activeTaskTypeButton: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  taskTypeText: {
+    fontSize: 12,
+    color: COLORS.darkGray,
+    fontWeight: '500',
+  },
+  activeTaskTypeText: {
+    color: COLORS.white,
+    fontWeight: 'bold',
+  },
+  uploadButton: {
+    backgroundColor: COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 8,
+  },
+  uploadButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  uploadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    gap: 8,
+  },
+  uploadingText: {
+    color: COLORS.darkGray,
+    fontSize: 14,
+  },
+  mediaPreviewContainer: {
+    marginTop: 12,
+  },
+  mediaPreviewTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.black,
+    marginBottom: 8,
+  },
+  mediaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  mediaPreviewItem: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  mediaPreviewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  removeMediaButton: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    backgroundColor: COLORS.white,
+    borderRadius: 10,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.gray,
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: COLORS.gray,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: COLORS.black,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  createButton: {
+    flex: 1,
+    backgroundColor: COLORS.primary,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  disabledButton: {
+    backgroundColor: COLORS.lightGray,
+    opacity: 0.6,
+  },
+  createButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 

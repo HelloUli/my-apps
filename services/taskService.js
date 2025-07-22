@@ -11,8 +11,9 @@ import {
   orderBy 
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
+import * as FileSystem from 'expo-file-system';
 
 export const taskService = {
   // Create a new task
@@ -330,10 +331,15 @@ export const taskService = {
   // Upload media for a task
   async uploadTaskMedia(taskId, file, fileName) {
     try {
+      // Read file as base64
+      const base64Data = await FileSystem.readAsStringAsync(file, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      
       // Create a storage reference
       const storageRef = ref(storage, `task-media/${taskId}/${fileName}`);
-      // Upload the file
-      await uploadBytes(storageRef, file);
+      // Upload the base64 string
+      await uploadString(storageRef, base64Data, 'base64');
       // Get the download URL
       const downloadURL = await getDownloadURL(storageRef);
       // Update the task with the new media URL

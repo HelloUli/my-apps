@@ -22,10 +22,7 @@ import { taskService } from '../services/taskService';
 const ProjectsScreen = ({ navigation, route }) => {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showAddTaskModal, setShowAddTaskModal] = useState(false);
-  const [addTaskProject, setAddTaskProject] = useState(null);
-  const [newTasks, setNewTasks] = useState([]);
-  const [addingTasks, setAddingTasks] = useState(false);
+
   const [isAdmin, setIsAdmin] = useState(false);
 
   // Get filter from navigation params
@@ -55,10 +52,14 @@ const ProjectsScreen = ({ navigation, route }) => {
           }
           if (filter === 'active') {
             filteredProjects = allProjects.filter(p => p.status === 'in-progress');
+          } else if (filter === 'completed') {
+            filteredProjects = allProjects.filter(p => p.status === 'completed');
           } else {
             filteredProjects = allProjects;
           }
         }
+        
+
         setProjects(filteredProjects);
       }
     } catch (error) {
@@ -111,75 +112,12 @@ const ProjectsScreen = ({ navigation, route }) => {
   const getTitle = () => {
     if (filter === 'all') return 'All Projects';
     if (filter === 'active') return 'Active Projects';
+    if (filter === 'completed') return 'Completed Projects';
     if (filter === 'my') return 'My Projects';
     return 'Projects';
   };
 
-  const openAddTaskModal = (project) => {
-    setAddTaskProject(project);
-    setNewTasks([]);
-    setShowAddTaskModal(true);
-  };
 
-  const addTaskToList = () => {
-    const newTask = {
-      id: Date.now().toString(),
-      title: '',
-      description: '',
-      type: 'Need Media',
-      priority: 'medium',
-      instructions: ''
-    };
-    setNewTasks([...newTasks, newTask]);
-  };
-
-  const updateNewTask = (taskId, field, value) => {
-    setNewTasks(newTasks.map(task =>
-      task.id === taskId ? { ...task, [field]: value } : task
-    ));
-  };
-
-  const removeNewTask = (taskId) => {
-    setNewTasks(newTasks.filter(task => task.id !== taskId));
-  };
-
-  const submitNewTasks = async () => {
-    if (!addTaskProject || newTasks.length === 0) {
-      Alert.alert('Error', 'Please add at least one task');
-      return;
-    }
-    setAddingTasks(true);
-    try {
-      const currentUser = auth.currentUser;
-      for (const task of newTasks) {
-        if (task.title && task.description) {
-          const taskData = {
-            assigned_user_id: addTaskProject.assigned_user_id,
-            project_id: addTaskProject.id,
-            title: task.title,
-            description: task.description,
-            instructions: task.instructions,
-            type: task.type,
-            priority: task.priority,
-            dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-            assignedBy: currentUser.uid,
-            status: 'pending',
-            createdAt: new Date(),
-          };
-          await taskService.createTask(taskData);
-        }
-      }
-      setShowAddTaskModal(false);
-      setAddTaskProject(null);
-      setNewTasks([]);
-      await loadProjects();
-      Alert.alert('Success', 'Task(s) added to project!');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to add tasks: ' + error.message);
-    } finally {
-      setAddingTasks(false);
-    }
-  };
 
   const completeProject = async (projectId) => {
     try {
@@ -234,10 +172,15 @@ const ProjectsScreen = ({ navigation, route }) => {
           <ScrollView showsVerticalScrollIndicator={false}>
             {projects.length === 0 ? (
               <View style={styles.emptyState}>
-                <Ionicons name="folder-open" size={64} color={COLORS.darkGray} />
-                <Text style={styles.emptyTitle}>No Ongoing Projects</Text>
+                <Ionicons name={filter === 'completed' ? "checkmark-done-circle" : "folder-open"} size={64} color={COLORS.darkGray} />
+                <Text style={styles.emptyTitle}>
+                  {filter === 'completed' ? 'No Completed Projects' : 'No Ongoing Projects'}
+                </Text>
                 <Text style={styles.emptySubtitle}>
-                  You don't have any ongoing projects yet.
+                  {filter === 'completed' 
+                    ? 'No projects have been completed yet.'
+                    : 'You don\'t have any ongoing projects yet.'
+                  }
                 </Text>
               </View>
             ) : (
@@ -278,140 +221,44 @@ const ProjectsScreen = ({ navigation, route }) => {
                       />
                     </View>
                   </View>
-                  {/* Add Task button for admins */}
-                  {isAdmin && (
-                    <TouchableOpacity
-                      style={styles.addTaskButton}
-                      onPress={() => openAddTaskModal(project)}
-                    >
-                      <Ionicons name="add-circle" size={20} color={COLORS.primary} />
-                      <Text style={styles.addTaskText}>Add Task</Text>
-                    </TouchableOpacity>
-                  )}
-                  {/* Admin: Complete Project button */}
-                  {isAdmin && project.status !== 'completed' && (
-                    <TouchableOpacity
-                      style={[styles.addTaskButton, { backgroundColor: COLORS.secondary }]}
-                      onPress={() => completeProject(project.id)}
-                    >
-                      <Ionicons name="checkmark-circle" size={20} color={COLORS.white} />
-                      <Text style={[styles.addTaskText, { color: COLORS.white }]}>Complete Project</Text>
-                    </TouchableOpacity>
-                  )}
-                  {/* User: See Website button */}
-                  {!isAdmin && project.websiteLink && (
-                    <TouchableOpacity
-                      style={[styles.addTaskButton, { backgroundColor: COLORS.primary }]}
-                      onPress={() => Linking.openURL(project.websiteLink)}
-                    >
-                      <Ionicons name="globe" size={20} color={COLORS.white} />
-                      <Text style={[styles.addTaskText, { color: COLORS.white }]}>See Website</Text>
-                    </TouchableOpacity>
-                  )}
+                  
+                  {/* Action buttons */}
+                  <View style={styles.actionButtons}>
+                    
+                    {/* Admin: Complete Project button */}
+                    {isAdmin && project.status !== 'completed' && (
+                      <TouchableOpacity
+                        style={[styles.addTaskButton, { borderColor: COLORS.danger, backgroundColor: 'transparent' }]}
+                        onPress={() => completeProject(project.id)}
+                      >
+                        <Ionicons name="checkmark-circle" size={20} color={COLORS.danger} />
+                        <Text style={[styles.addTaskText, { color: COLORS.danger }]}>Complete Project</Text>
+                      </TouchableOpacity>
+                    )}
+                    
+                    {/* Website button for all users */}
+                    {project.website_link && (
+                      <TouchableOpacity
+                        style={[styles.addTaskButton, { backgroundColor: COLORS.primary }]}
+                        onPress={() => {
+                          const url = project.website_link.startsWith('http') 
+                            ? project.website_link 
+                            : `https://${project.website_link}`;
+                          Linking.openURL(url);
+                        }}
+                      >
+                        <Ionicons name="globe" size={20} color={COLORS.white} />
+                        <Text style={[styles.addTaskText, { color: COLORS.white }]}>View Website</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
               ))
             )}
           </ScrollView>
         </View>
 
-        {/* Add Task Modal */}
-        <Modal
-          visible={showAddTaskModal}
-          transparent={true}
-          animationType="slide"
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Add Task to Project</Text>
-              <Text style={styles.modalSubtitle}>{addTaskProject?.title}</Text>
-              <ScrollView style={styles.modalScrollView} showsVerticalScrollIndicator={false}>
-                <Text style={styles.modalLabel}>Tasks:</Text>
-                {newTasks.map((task, index) => (
-                  <View key={task.id} style={styles.taskItem}>
-                    <View style={styles.taskHeader}>
-                      <Text style={styles.taskNumber}>Task {index + 1}</Text>
-                      <TouchableOpacity
-                        style={styles.removeTaskButton}
-                        onPress={() => removeNewTask(task.id)}
-                      >
-                        <Ionicons name="close-circle" size={20} color={COLORS.danger} />
-                      </TouchableOpacity>
-                    </View>
-                    <TextInput
-                      style={styles.taskInput}
-                      placeholder="Task title..."
-                      value={task.title}
-                      onChangeText={text => updateNewTask(task.id, 'title', text)}
-                    />
-                    <TextInput
-                      style={styles.taskInput}
-                      placeholder="Task description..."
-                      value={task.description}
-                      onChangeText={text => updateNewTask(task.id, 'description', text)}
-                      multiline
-                      numberOfLines={2}
-                      textAlignVertical="top"
-                    />
-                    <View style={styles.taskTypeGroup}>
-                      <TouchableOpacity
-                        style={[
-                          styles.taskTypeButton,
-                          task.type === 'Need Media' && styles.taskTypeButtonActive
-                        ]}
-                        onPress={() => updateNewTask(task.id, 'type', 'Need Media')}
-                      >
-                        <Ionicons name="cloud-upload" size={16} color={task.type === 'Need Media' ? COLORS.white : COLORS.darkGray} />
-                        <Text style={[
-                          styles.taskTypeText,
-                          task.type === 'Need Media' && styles.taskTypeTextActive
-                        ]}>Media</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[
-                          styles.taskTypeButton,
-                          task.type === 'Need Feedback' && styles.taskTypeButtonActive
-                        ]}
-                        onPress={() => updateNewTask(task.id, 'type', 'Need Feedback')}
-                      >
-                        <Ionicons name="chatbubble-ellipses" size={16} color={task.type === 'Need Feedback' ? COLORS.white : COLORS.darkGray} />
-                        <Text style={[
-                          styles.taskTypeText,
-                          task.type === 'Need Feedback' && styles.taskTypeTextActive
-                        ]}>Feedback</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))}
-                <TouchableOpacity
-                  style={styles.addTaskButton}
-                  onPress={addTaskToList}
-                >
-                  <Ionicons name="add" size={20} color={COLORS.primary} />
-                  <Text style={styles.addTaskText}>Add Task</Text>
-                </TouchableOpacity>
-              </ScrollView>
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={styles.modalCancelButton}
-                  onPress={() => setShowAddTaskModal(false)}
-                >
-                  <Text style={styles.modalCancelText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.modalConfirmButton}
-                  onPress={submitNewTasks}
-                  disabled={addingTasks}
-                >
-                  {addingTasks ? (
-                    <ActivityIndicator size="small" color={COLORS.white} />
-                  ) : (
-                    <Text style={styles.modalConfirmText}>Add Task(s)</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
+
       </LinearGradient>
     </View>
   );
@@ -593,6 +440,12 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 4,
   },
+  actionButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 10,
+  },
   addTaskButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -601,7 +454,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 8,
-    marginTop: 10,
+    flex: 1,
+    minWidth: 120,
   },
   addTaskText: {
     marginLeft: 8,
@@ -613,48 +467,71 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
   },
   modalContent: {
     backgroundColor: COLORS.white,
-    borderRadius: 15,
-    padding: 20,
+    borderRadius: 20,
+    padding: 24,
     width: '90%',
-    alignItems: 'center',
+    maxWidth: 400,
+    maxHeight: '85%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  modalScrollView: {
+    flex: 1,
+    marginBottom: 20,
+    maxHeight: 400,
   },
   modalTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: 'bold',
     color: COLORS.black,
-    marginBottom: 10,
-  },
-  modalSubtitle: {
-    fontSize: 18,
-    color: COLORS.darkGray,
-    marginBottom: 20,
+    marginBottom: 8,
     textAlign: 'center',
   },
+  modalSubtitle: {
+    fontSize: 16,
+    color: COLORS.darkGray,
+    marginBottom: 24,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
   modalLabel: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.black,
+    marginBottom: 12,
+    marginTop: 8,
+  },
+  fieldLabel: {
     fontSize: 16,
     fontWeight: 'bold',
     color: COLORS.black,
-    marginBottom: 10,
+    marginBottom: 8,
+    marginTop: 8,
   },
   taskItem: {
     backgroundColor: COLORS.lightGray,
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 10,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
     width: '100%',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
   },
   taskHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   taskNumber: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: 'bold',
     color: COLORS.primary,
   },
@@ -665,32 +542,74 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.gray,
     borderRadius: 8,
-    padding: 10,
-    marginBottom: 10,
+    padding: 12,
+    marginBottom: 12,
     fontSize: 16,
     color: COLORS.black,
+    backgroundColor: COLORS.white,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: COLORS.gray,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    fontSize: 16,
+    color: COLORS.black,
+    backgroundColor: COLORS.white,
+    minHeight: 44,
+  },
+  priorityGroup: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 12,
+    gap: 8,
+  },
+  priorityButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.gray,
+    backgroundColor: COLORS.white,
+    alignItems: 'center',
+  },
+  priorityButtonActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  priorityButtonText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.darkGray,
+  },
+  priorityButtonTextActive: {
+    color: COLORS.white,
   },
   taskTypeGroup: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginTop: 10,
-    marginBottom: 15,
+    marginTop: 12,
+    marginBottom: 16,
+    gap: 8,
   },
   taskTypeButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 15,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: COLORS.gray,
+    backgroundColor: COLORS.white,
   },
   taskTypeButtonActive: {
     backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
   },
   taskTypeText: {
-    marginLeft: 8,
+    marginLeft: 6,
     fontSize: 14,
     fontWeight: 'bold',
   },
@@ -699,15 +618,18 @@ const styles = StyleSheet.create({
   },
   modalButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
     width: '100%',
-    marginTop: 20,
+    marginTop: 24,
+    gap: 12,
   },
   modalCancelButton: {
     backgroundColor: COLORS.gray,
-    paddingVertical: 12,
-    paddingHorizontal: 25,
-    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+    flex: 1,
+    alignItems: 'center',
   },
   modalCancelText: {
     color: COLORS.black,
@@ -716,14 +638,29 @@ const styles = StyleSheet.create({
   },
   modalConfirmButton: {
     backgroundColor: COLORS.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 25,
-    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+    flex: 1,
+    alignItems: 'center',
   },
   modalConfirmText: {
     color: COLORS.white,
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  emptyTaskState: {
+    backgroundColor: COLORS.lightGray,
+    borderRadius: 12,
+    padding: 20,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  emptyTaskText: {
+    fontSize: 16,
+    color: COLORS.darkGray,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });
 

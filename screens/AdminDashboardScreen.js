@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   Image,
   Dimensions,
+  Modal,
+  TextInput,
 } from 'react-native';
 
 const { width } = Dimensions.get('window');
@@ -19,7 +21,11 @@ import { COLORS } from '../constants/colors';
 import { authService } from '../services/authService';
 import { projectService } from '../services/projectService';
 import { taskService } from '../services/taskService';
+import { userService } from '../services/userService';
+import { taskResponseService } from '../services/taskResponseService';
 import { auth } from '../firebase';
+import * as ImagePicker from 'expo-image-picker';
+import { runAllTests } from '../test-upload';
 
 const AdminDashboardScreen = ({ navigation }) => {
   const [user, setUser] = useState(null);
@@ -30,9 +36,23 @@ const AdminDashboardScreen = ({ navigation }) => {
     completedProjects: 0
   });
   const [loading, setLoading] = useState(true);
+  
+  // Add Task Modal State
+  const [showAddTaskModal, setShowAddTaskModal] = useState(false);
+  const [newTask, setNewTask] = useState({
+    title: '',
+    description: '',
+    type: 'Need Media',
+    assigned_user_id: '',
+    reviewMedia: [],
+  });
+  const [allUsers, setAllUsers] = useState([]);
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
 
   useEffect(() => {
     loadAdminData();
+    loadUsers();
   }, []);
 
   useFocusEffect(
@@ -97,15 +117,180 @@ const AdminDashboardScreen = ({ navigation }) => {
   const handleActiveProjectsPress = () => {
     navigation.navigate('Projects', { filter: 'active' });
   };
+  const handleCompletedProjectsPress = () => {
+    navigation.navigate('Projects', { filter: 'completed' });
+  };
+
+  // Load users for task assignment
+  const loadUsers = async () => {
+    try {
+      const users = await userService.getAllUsers();
+      const activeUsers = users.filter(user => user.role === 'user');
+      setAllUsers(activeUsers);
+    } catch (error) {
+      console.error('Error loading users:', error);
+      setAllUsers([]);
+    }
+  };
+
+  // Pick media for review tasks
+  const pickMedia = async () => {
+    try {
+      setUploadingMedia(true);
+      
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please grant permission to access your media library');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
+        allowsMultipleSelection: true,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets) {
+        const newMedia = result.assets.map((asset, index) => ({
+          uri: asset.uri,
+          type: asset.type || 'image',
+          fileName: asset.fileName || `media_${Date.now()}_${index}.jpg`,
+        }));
+        
+        setNewTask(prev => ({
+          ...prev,
+          reviewMedia: [...(prev.reviewMedia || []), ...newMedia]
+        }));
+      }
+    } catch (error) {
+      console.error('Error picking media:', error);
+      Alert.alert('Error', 'Failed to pick media');
+    } finally {
+      setUploadingMedia(false);
+    }
+  };
+
+  // Remove media from review task
+  const removeMedia = (index) => {
+    setNewTask(prev => ({
+      ...prev,
+      reviewMedia: prev.reviewMedia.filter((_, i) => i !== index)
+    }));
+  };
+
+  // Test function to diagnose upload issues
+  const runDiagnosticTests = async () => {
+    try {
+      console.log('🔍 Starting diagnostic tests...');
+      const results = await runAllTests();
+      console.log('📊 Diagnostic test results:', results);
+      
+      Alert.alert(
+        'Diagnostic Results',
+        `Simple Upload: ${results.simpleUpload ? '✅' : '❌'}\n` +
+        `Base64 Upload: ${results.base64Upload ? '✅' : '❌'}\n` +
+        `File System Upload: ${results.fileSystemUpload ? '✅' : '❌'}\n` +
+        `Firebase SDK: ${results.firebaseSDK ? '✅' : '❌'}`
+      );
+    } catch (error) {
+      console.error('❌ Diagnostic test failed:', error);
+      Alert.alert('Test Failed', 'Error running diagnostic tests: ' + error.message);
+    }
+  };
+
+  // Create new task
+  const createNewTask = async () => {
+    if (!newTask.title || !newTask.description || !newTask.assigned_user_id) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+
+    if (newTask.type === 'Review Task' && newTask.reviewMedia.length === 0) {
+      Alert.alert('Error', 'Please upload at least one media file for review tasks');
+      return;
+    }
+
+    try {
+      let taskData = {
+        ...newTask,
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+        assignedBy: auth.currentUser?.uid || 'admin',
+        status: 'pending',
+      };
+
+      // If it's a review task, upload media files first
+      if (newTask.type === 'Review Task' && newTask.reviewMedia.length > 0) {
+        const uploadedMedia = [];
+        
+        for (const media of newTask.reviewMedia) {
+          try {
+            // Create a temporary task ID for media upload
+            const tempTaskId = `temp_${Date.now()}`;
+            const tempUserId = newTask.assigned_user_id;
+            
+            const mediaFile = {
+              uri: media.uri,
+              fileName: media.fileName || `media_${Date.now()}.jpg`,
+              mimeType: media.type === 'video' ? 'video/mp4' : 'image/jpeg'
+            };
+            
+            const mediaUrl = await taskResponseService.uploadMediaFile(tempTaskId, tempUserId, mediaFile);
+            uploadedMedia.push({
+              url: mediaUrl,
+              type: media.type,
+              fileName: media.fileName || 'unknown_file',
+            });
+          } catch (error) {
+            console.error('Error uploading media file:', error);
+            Alert.alert('Error', `Failed to upload media file: ${error.message}`);
+            return;
+          }
+        }
+        
+        taskData.reviewMedia = uploadedMedia;
+      }
+
+      await taskService.createTask(taskData);
+      
+      // Reset form
+      setNewTask({
+        title: '',
+        description: '',
+        type: 'Need Media',
+        assigned_user_id: '',
+        reviewMedia: [],
+      });
+      setShowUserDropdown(false);
+      setShowAddTaskModal(false);
+      
+      Alert.alert('Success', 'Task created successfully!');
+      
+      // Reload admin data to update stats
+      await loadAdminData();
+      
+    } catch (error) {
+      console.error('Error creating task:', error);
+      Alert.alert('Error', 'Failed to create task');
+    }
+  };
 
   const adminMenuItems = [
+    {
+      id: 'add-task',
+      title: 'Add Task',
+      subtitle: 'Create new tasks for clients to complete',
+      icon: 'add-circle',
+      color: COLORS.primary,
+      gradient: [COLORS.danger, '#FF8C00'], // Red to Orange
+      onPress: () => setShowAddTaskModal(true),
+    },
     {
       id: 'assign-projects',
       title: 'Assign Projects',
       subtitle: 'Create new projects and assign tasks to clients',
-      icon: 'add-circle',
-      color: COLORS.primary,
-      gradient: [COLORS.primary, COLORS.accent],
+      icon: 'folder',
+      color: COLORS.secondary,
+      gradient: [COLORS.secondary, COLORS.danger],
       onPress: () => navigation.navigate('AssignProjects'),
     },
     {
@@ -113,18 +298,18 @@ const AdminDashboardScreen = ({ navigation }) => {
       title: 'Client Responses',
       subtitle: 'Review uploaded media and feedback from clients',
       icon: 'folder-open',
-      color: COLORS.secondary,
-      gradient: [COLORS.secondary, COLORS.danger],
+      color: COLORS.accent,
+      gradient: [COLORS.accent, COLORS.primary],
       onPress: () => navigation.navigate('AdminNotifications'),
     },
     {
-      id: 'projects',
-      title: 'All Projects',
-      subtitle: 'View all projects and their current status',
-      icon: 'analytics',
-      color: COLORS.accent,
-      gradient: [COLORS.accent, COLORS.primary],
-      onPress: () => navigation.navigate('Projects'),
+      id: 'diagnostic-test',
+      title: 'Test Upload',
+      subtitle: 'Run diagnostic tests for media upload issues',
+      icon: 'bug',
+      color: COLORS.darkGray,
+      gradient: [COLORS.darkGray, '#666'],
+      onPress: runDiagnosticTests,
     },
   ];
 
@@ -150,7 +335,8 @@ const AdminDashboardScreen = ({ navigation }) => {
     { 
       label: 'Completed Projects', 
       value: stats.completedProjects.toString(), 
-      icon: 'checkmark-done-circle'
+      icon: 'checkmark-done-circle',
+      onPress: handleCompletedProjectsPress
     },
   ];
 
@@ -260,6 +446,248 @@ const AdminDashboardScreen = ({ navigation }) => {
             </View>
           </ScrollView>
         </View>
+
+        {/* Add Task Modal */}
+        <Modal
+          visible={showAddTaskModal}
+          transparent={true}
+          animationType="slide"
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Create New Task</Text>
+                <TouchableOpacity
+                  style={styles.closeButton}
+                  onPress={() => setShowAddTaskModal(false)}
+                >
+                  <Ionicons name="close" size={24} color={COLORS.darkGray} />
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.modalBody}>
+                <ScrollView 
+                  style={styles.modalScrollView} 
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {/* Task Name */}
+                  <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Task Name *</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Enter task name..."
+                    value={newTask.title}
+                    onChangeText={(text) => setNewTask({...newTask, title: text})}
+                  />
+                </View>
+                
+                {/* Description */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Description *</Text>
+                  <TextInput
+                    style={[styles.textInput, styles.textArea]}
+                    placeholder="Enter task description..."
+                    value={newTask.description}
+                    onChangeText={(text) => setNewTask({...newTask, description: text})}
+                    multiline
+                    numberOfLines={4}
+                    textAlignVertical="top"
+                  />
+                </View>
+                
+                {/* User Assignment */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Assign To User *</Text>
+                  <TouchableOpacity
+                    style={styles.userDropdown}
+                    onPress={() => setShowUserDropdown(!showUserDropdown)}
+                  >
+                    <Text style={[
+                      styles.dropdownText,
+                      !newTask.assigned_user_id && styles.placeholderText
+                    ]}>
+                      {newTask.assigned_user_id 
+                        ? allUsers.find(u => u.id === newTask.assigned_user_id)?.fullName || 'Unknown User'
+                        : 'Select a user to assign task...'
+                      }
+                    </Text>
+                    <Ionicons 
+                      name={showUserDropdown ? "chevron-up" : "chevron-down"} 
+                      size={20} 
+                      color={COLORS.darkGray} 
+                    />
+                  </TouchableOpacity>
+                  
+                  {showUserDropdown && (
+                    <View style={styles.dropdownContainer}>
+                      <ScrollView style={styles.userList} showsVerticalScrollIndicator={false}>
+                        {allUsers.length > 0 ? (
+                          allUsers.map((user) => (
+                            <TouchableOpacity
+                              key={user.id}
+                              style={[
+                                styles.userItem,
+                                newTask.assigned_user_id === user.id && styles.selectedUserItem
+                              ]}
+                              onPress={() => {
+                                setNewTask({...newTask, assigned_user_id: user.id});
+                                setShowUserDropdown(false);
+                              }}
+                            >
+                              <Text style={[
+                                styles.userItemText,
+                                newTask.assigned_user_id === user.id && styles.selectedUserItemText
+                              ]}>
+                                {user.fullName} ({user.email})
+                              </Text>
+                            </TouchableOpacity>
+                          ))
+                        ) : (
+                          <View style={styles.userItem}>
+                            <Text style={styles.userItemText}>No users available</Text>
+                          </View>
+                        )}
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
+                
+                {/* Task Type */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Task Type</Text>
+                  <View style={styles.taskTypeContainer}>
+                    <TouchableOpacity
+                      style={[
+                        styles.taskTypeButton,
+                        newTask.type === 'Need Media' && styles.activeTaskTypeButton
+                      ]}
+                      onPress={() => setNewTask({...newTask, type: 'Need Media'})}
+                    >
+                      <Ionicons 
+                        name="cloud-upload" 
+                        size={16} 
+                        color={newTask.type === 'Need Media' ? COLORS.white : COLORS.darkGray} 
+                      />
+                      <Text style={[
+                        styles.taskTypeText,
+                        newTask.type === 'Need Media' && styles.activeTaskTypeText
+                      ]}>Media Needed</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      style={[
+                        styles.taskTypeButton,
+                        newTask.type === 'Need Feedback' && styles.activeTaskTypeButton
+                      ]}
+                      onPress={() => setNewTask({...newTask, type: 'Need Feedback'})}
+                    >
+                      <Ionicons 
+                        name="chatbubble-ellipses" 
+                        size={16} 
+                        color={newTask.type === 'Need Feedback' ? COLORS.white : COLORS.darkGray} 
+                      />
+                      <Text style={[
+                        styles.taskTypeText,
+                        newTask.type === 'Need Feedback' && styles.activeTaskTypeText
+                      ]}>Feedback Needed</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      style={[
+                        styles.taskTypeButton,
+                        newTask.type === 'Review Task' && styles.activeTaskTypeButton
+                      ]}
+                      onPress={() => setNewTask({...newTask, type: 'Review Task'})}
+                    >
+                      <Ionicons 
+                        name="eye" 
+                        size={16} 
+                        color={newTask.type === 'Review Task' ? COLORS.white : COLORS.darkGray} 
+                      />
+                      <Text style={[
+                        styles.taskTypeText,
+                        newTask.type === 'Review Task' && styles.activeTaskTypeText
+                      ]}>Review Work</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Review Task Media Upload */}
+                {newTask.type === 'Review Task' && (
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Upload Media for Review Work *</Text>
+                    
+                    {uploadingMedia ? (
+                      <View style={styles.uploadingContainer}>
+                        <ActivityIndicator size="small" color={COLORS.primary} />
+                        <Text style={styles.uploadingText}>Processing...</Text>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.uploadButton}
+                        onPress={pickMedia}
+                      >
+                        <Ionicons name="image" size={20} color={COLORS.white} />
+                        <Text style={styles.uploadButtonText}>Pick Media Files</Text>
+                      </TouchableOpacity>
+                    )}
+                    
+                    {newTask.reviewMedia.length > 0 && (
+                      <View style={styles.mediaPreviewContainer}>
+                        <Text style={styles.mediaPreviewTitle}>
+                          Selected Media ({newTask.reviewMedia.length}):
+                        </Text>
+                        <View style={styles.mediaGrid}>
+                          {newTask.reviewMedia.map((media, index) => (
+                            <View key={index} style={styles.mediaPreviewItem}>
+                              <Image
+                                source={{ uri: media.uri }}
+                                style={styles.mediaPreviewImage}
+                                resizeMode="cover"
+                              />
+                              <TouchableOpacity
+                                style={styles.removeMediaButton}
+                                onPress={() => removeMedia(index)}
+                              >
+                                <Ionicons name="close-circle" size={20} color={COLORS.danger} />
+                              </TouchableOpacity>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                )}
+                              </ScrollView>
+              </View>
+              
+              {/* Action Buttons */}
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={styles.cancelButton}
+                  onPress={() => setShowAddTaskModal(false)}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[
+                    styles.createButton,
+                    (!newTask.title || !newTask.description || !newTask.assigned_user_id || 
+                     (newTask.type === 'Review Task' && newTask.reviewMedia.length === 0)) && 
+                    styles.disabledButton
+                  ]}
+                  onPress={createNewTask}
+                  disabled={!newTask.title || !newTask.description || !newTask.assigned_user_id || 
+                           (newTask.type === 'Review Task' && newTask.reviewMedia.length === 0)}
+                >
+                  <Text style={styles.createButtonText}>Create Task</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </LinearGradient>
     </View>
   );
@@ -516,6 +944,242 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(0,0,0,0.05)',
     marginVertical: 8,
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    margin: 20,
+    width: '90%',
+    maxWidth: 400,
+    height: '80%',
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.gray,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.black,
+  },
+  closeButton: {
+    padding: 5,
+  },
+  modalBody: {
+    flex: 1,
+  },
+  modalScrollView: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+  },
+  inputGroup: {
+    marginBottom: 20,
+  },
+  inputLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.black,
+    marginBottom: 8,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: COLORS.darkGray,
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 16,
+    backgroundColor: COLORS.white,
+  },
+  textArea: {
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  userDropdown: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.darkGray,
+    borderRadius: 10,
+    padding: 12,
+    backgroundColor: COLORS.white,
+    minHeight: 48,
+  },
+  dropdownText: {
+    fontSize: 16,
+    color: COLORS.black,
+    flex: 1,
+  },
+  placeholderText: {
+    color: COLORS.darkGray,
+    fontStyle: 'italic',
+  },
+  dropdownContainer: {
+    maxHeight: 150,
+    borderWidth: 1,
+    borderColor: COLORS.gray,
+    borderRadius: 10,
+    backgroundColor: COLORS.white,
+    marginTop: 5,
+  },
+  userList: {
+    maxHeight: 150,
+  },
+  userItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.lightGray,
+  },
+  selectedUserItem: {
+    backgroundColor: COLORS.primary,
+  },
+  userItemText: {
+    fontSize: 14,
+    color: COLORS.black,
+  },
+  selectedUserItemText: {
+    color: COLORS.white,
+    fontWeight: 'bold',
+  },
+  taskTypeContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  taskTypeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderWidth: 1,
+    borderColor: COLORS.darkGray,
+    borderRadius: 10,
+    backgroundColor: COLORS.white,
+    gap: 6,
+    marginHorizontal: 2,
+  },
+  activeTaskTypeButton: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  taskTypeText: {
+    fontSize: 11,
+    color: COLORS.darkGray,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  activeTaskTypeText: {
+    color: COLORS.white,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  uploadButton: {
+    backgroundColor: COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 8,
+  },
+  uploadButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  uploadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    gap: 8,
+  },
+  uploadingText: {
+    color: COLORS.darkGray,
+    fontSize: 14,
+  },
+  mediaPreviewContainer: {
+    marginTop: 12,
+  },
+  mediaPreviewTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.black,
+    marginBottom: 8,
+  },
+  mediaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  mediaPreviewItem: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  mediaPreviewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  removeMediaButton: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    backgroundColor: COLORS.white,
+    borderRadius: 10,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.gray,
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: COLORS.gray,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: COLORS.black,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  createButton: {
+    flex: 1,
+    backgroundColor: COLORS.primary,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  disabledButton: {
+    backgroundColor: COLORS.lightGray,
+    opacity: 0.6,
+  },
+  createButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 
